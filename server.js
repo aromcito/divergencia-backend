@@ -3,10 +3,7 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken'); // ¡Esta línea faltaba!
-const path = require('path');
-
-// Crear aplicación Express
+const jwt = require('jsonwebtoken'); 
 const app = express();
 
 // Configuración de middleware
@@ -35,12 +32,12 @@ db.getConnection()
   });
 
 // Importar routers
-const { router: authRouter, authenticateToken } = require('./api/auth');
+const authRoutes = require('./api/auth');
 const especialidadesRouter = require('./api/especialidades');
 const blogsRouter = require('./api/blogs');
 
 // Configurar rutas API
-app.use('/api/auth', authRouter);
+app.use('/api/auth', authRoutes.router);
 app.use('/api/especialidades', especialidadesRouter);
 app.use('/api/blogs', blogsRouter);
 
@@ -89,19 +86,26 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// Ruta de login (corregida)
-app.post('/login', async (req, res) => {
+// Ruta de login con trazabilidad
+app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
+  console.log('🔐 Intento de login recibido:', { email });
 
   try {
     const [users] = await db.query('SELECT * FROM usuarios WHERE email = ?', [email]);
+    console.log('📦 Resultado de búsqueda en la BD:', users);
+
     if (users.length === 0) {
+      console.log('❌ Usuario no encontrado');
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
     const user = users[0];
     const validPassword = await bcrypt.compare(password, user.password);
+    console.log('🔍 Contraseña válida:', validPassword);
+
     if (!validPassword) {
+      console.log('❌ Contraseña incorrecta');
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
@@ -110,6 +114,8 @@ app.post('/login', async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
+
+    console.log('✅ Token generado correctamente');
 
     res.json({
       token,
@@ -122,13 +128,13 @@ app.post('/login', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('💥 Error en login:', error);
     res.status(500).json({ error: 'Error al iniciar sesión' });
   }
 });
 
 // Ruta protegida de ejemplo
-app.get('/dashboard', authenticateToken, (req, res) => {
+app.get('/', authRoutes.authenticateToken, (req, res) => {
   res.json({ 
     message: 'Bienvenido al dashboard',
     user: req.user 
@@ -136,7 +142,7 @@ app.get('/dashboard', authenticateToken, (req, res) => {
 });
 
 // Manejo de errores
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Error interno del servidor' });
 });
